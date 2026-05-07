@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Активація гарантії</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Rubik', sans-serif;
+      background: #E1EBF7; color: #20303C;
+      min-height: 100dvh;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 24px;
+    }
+    .logo { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: #7a9ab5; margin-bottom: 32px; font-weight: 500; }
+    h1 { font-size: 20px; font-weight: 600; margin-bottom: 6px; text-align: center; color: #20303C; }
+    .hint { font-size: 13px; color: #5a7a93; margin-bottom: 28px; text-align: center; }
+    #camera-wrap {
+      position: relative;
+      width: min(300px, 88vw); height: min(300px, 88vw);
+      border-radius: 20px; overflow: hidden; background: #20303C;
+      box-shadow: 0 8px 32px rgba(32,48,60,0.15);
+    }
+    video { width: 100%; height: 100%; object-fit: cover; display: block; }
+    canvas { display: none; }
+    .corners { position: absolute; inset: 0; pointer-events: none; }
+    .corners::before,.corners::after,.corners b::before,.corners b::after {
+      content: ''; position: absolute; width: 26px; height: 26px;
+      border-color: rgba(225,235,247,.9); border-style: solid; border-radius: 2px;
+    }
+    .corners::before  { top:14px;    left:14px;   border-width: 3px 0 0 3px; }
+    .corners::after   { top:14px;    right:14px;  border-width: 3px 3px 0 0; }
+    .corners b::before{ bottom:14px; left:14px;   border-width: 0 0 3px 3px; }
+    .corners b::after { bottom:14px; right:14px;  border-width: 0 3px 3px 0; }
+    .scanline {
+      position: absolute; left:14px; right:14px; height: 1.5px;
+      background: linear-gradient(90deg, transparent, #E1EBF7 40%, #fff 50%, #E1EBF7 60%, transparent);
+      animation: sweep 2.2s ease-in-out infinite;
+    }
+    @keyframes sweep {
+      0%   { top: 14px; opacity: 0; }
+      8%   { opacity: 1; }
+      92%  { opacity: 1; }
+      100% { top: calc(100% - 14px); opacity: 0; }
+    }
+    #status { margin-top: 20px; font-size: 14px; color: #5a7a93; text-align: center; min-height: 20px; font-weight: 400; }
+    #status.ok  { color: #2d7a4f; }
+    #status.err { color: #b94040; }
+    #success-screen {
+      display: none; flex-direction: column; align-items: center; gap: 14px;
+      animation: fadeIn .4s ease;
+    }
+    @keyframes fadeIn { from { opacity:0; transform:scale(.95); } to { opacity:1; transform:scale(1); } }
+    .check-icon {
+      width: 72px; height: 72px; border-radius: 50%; background: #20303C;
+      display: flex; align-items: center; justify-content: center; font-size: 34px; color: #E1EBF7;
+    }
+    #success-screen h2 { font-size: 18px; font-weight: 600; color: #20303C; }
+    #success-screen p  { font-size: 13px; color: #5a7a93; }
+    #retry-btn {
+      margin-top: 12px; background: #20303C; border: none;
+      color: #E1EBF7; padding: 10px 24px; border-radius: 10px;
+      font-size: 13px; font-family: 'Rubik', sans-serif; font-weight: 500;
+      cursor: pointer; transition: opacity .2s;
+    }
+    #retry-btn:hover { opacity: 0.85; }
+  </style>
+</head>
+<body>
+
+  <p class="logo">Kava — Активація гарантії</p>
+
+  <div id="scanner-screen">
+    <h1>Скануйте QR-код</h1>
+    <p class="hint">Наведіть камеру на QR-код з коробки</p>
+    <div id="camera-wrap">
+      <video id="video" autoplay playsinline muted></video>
+      <canvas id="canvas"></canvas>
+      <div class="corners"><b></b></div>
+      <div class="scanline"></div>
+    </div>
+    <p id="status">Запускаємо камеру…</p>
+    <button id="retry-btn" style="display:none" onclick="startScanner()">Спробувати знову</button>
+  </div>
+
+  <div id="success-screen">
+    <div class="check-icon">✓</div>
+    <h2>QR зчитано!</h2>
+    <p>Переходимо до форми активації…</p>
+  </div>
+
+  <script>
+    // ⚠️ ЗАМІНИТИ на URL своєї Wix сторінки з формою
+    const WIX_FORM_URL = 'https://ТВІЙ-САЙТ.wixsite.com/mysite/warranty';
+
+    const video    = document.getElementById('video');
+    const canvas   = document.getElementById('canvas');
+    const ctx      = canvas.getContext('2d');
+    const statusEl = document.getElementById('status');
+    const retryBtn = document.getElementById('retry-btn');
+
+    let scanning = false;
+    let stream   = null;
+
+    async function startScanner() {
+      retryBtn.style.display = 'none';
+      statusEl.className = '';
+      statusEl.textContent = 'Запускаємо камеру…';
+
+      try {
+        if (stream) stream.getTracks().forEach(t => t.stop());
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 1280 } }
+        });
+        video.srcObject = stream;
+        await video.play();
+        statusEl.textContent = 'Наведіть на QR-код';
+        scanning = true;
+        requestAnimationFrame(tick);
+      } catch {
+        statusEl.textContent = 'Немає доступу до камери';
+        statusEl.className = 'err';
+        retryBtn.style.display = 'inline-block';
+      }
+    }
+
+    function tick() {
+      if (!scanning) return;
+      if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        canvas.width  = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0);
+        const img  = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+        if (code?.data?.trim()) {
+          scanning = false;
+          handleQR(code.data.trim());
+          return;
+        }
+      }
+      requestAnimationFrame(tick);
+    }
+
+    function handleQR(text) {
+      const match = text.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+
+      if (!match) {
+        statusEl.textContent = 'Невідомий формат QR. Спробуйте ще.';
+        statusEl.className = 'err';
+        retryBtn.style.display = 'inline-block';
+        return;
+      }
+
+      document.getElementById('scanner-screen').style.display = 'none';
+      document.getElementById('success-screen').style.display = 'flex';
+      if (stream) stream.getTracks().forEach(t => t.stop());
+
+      const url = `${WIX_FORM_URL}?doc_id=${encodeURIComponent(match[0])}`;
+      setTimeout(() => window.location.href = url, 700);
+    }
+
+    startScanner();
+  </script>
+</body>
+</html>
