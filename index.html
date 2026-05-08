@@ -36,21 +36,23 @@
     #qr-reader__status_span { font-family: 'Rubik', sans-serif !important; font-size: 13px !important; color: #5a7a93 !important; }
     #qr-reader__header_message { display: none !important; }
     #status { margin-top: 20px; font-size: 14px; color: #5a7a93; text-align: center; min-height: 20px; }
-    #result-screen {
+    #status.err { color: #b94040; }
+    #success-screen {
       display: none; flex-direction: column; align-items: center; gap: 14px;
-      text-align: center;
+      animation: fadeIn .4s ease;
     }
-    #result-screen h2 { font-size: 18px; font-weight: 600; color: #20303C; }
-    #raw-text {
-      font-size: 12px; color: #20303C; background: #fff;
-      padding: 12px; border-radius: 10px; word-break: break-all;
-      max-width: min(300px, 88vw); text-align: left;
+    @keyframes fadeIn { from{opacity:0;transform:scale(.95)} to{opacity:1;transform:scale(1)} }
+    .check-icon {
+      width: 72px; height: 72px; border-radius: 50%; background: #20303C;
+      display: flex; align-items: center; justify-content: center; font-size: 34px; color: #E1EBF7;
     }
+    #success-screen h2 { font-size: 18px; font-weight: 600; color: #20303C; }
+    #success-screen p  { font-size: 13px; color: #5a7a93; }
   </style>
 </head>
 <body>
 
-  <p class="logo">Coffee One — Debug</p>
+  <p class="logo">Coffee One — Активація гарантії</p>
 
   <div id="scanner-screen">
     <h1>Скануйте QR-код</h1>
@@ -59,12 +61,15 @@
     <p id="status"></p>
   </div>
 
-  <div id="result-screen">
-    <h2>Зчитано! Ось текст:</h2>
-    <div id="raw-text"></div>
+  <div id="success-screen">
+    <div class="check-icon">✓</div>
+    <h2>QR зчитано!</h2>
+    <p>Переходимо до форми активації…</p>
   </div>
 
   <script>
+    const WIX_FORM_URL = 'https://www.coffeeoneapp.com/qr-activation';
+
     const html5QrCode = new Html5Qrcode('qr-reader');
 
     html5QrCode.start(
@@ -72,15 +77,38 @@
       { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 },
       (decodedText) => {
         html5QrCode.stop();
-        document.getElementById('scanner-screen').style.display = 'none';
-        const resultScreen = document.getElementById('result-screen');
-        resultScreen.style.display = 'flex';
-        document.getElementById('raw-text').textContent = decodedText;
+        handleQR(decodedText.trim());
       },
       () => {}
     ).catch(err => {
       document.getElementById('status').textContent = 'Помилка камери: ' + err;
+      document.getElementById('status').className = 'err';
     });
+
+    function handleQR(text) {
+      // Шукаємо UUID формату xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+      const match = text.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+
+      if (!match) {
+        document.getElementById('status').textContent = 'Невідомий формат QR. Спробуйте ще.';
+        document.getElementById('status').className = 'err';
+        // Перезапускаємо сканер
+        html5QrCode.start(
+          { facingMode: 'environment' },
+          { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 },
+          (decodedText) => { html5QrCode.stop(); handleQR(decodedText.trim()); },
+          () => {}
+        );
+        return;
+      }
+
+      // Показуємо успіх і переходимо
+      document.getElementById('scanner-screen').style.display = 'none';
+      document.getElementById('success-screen').style.display = 'flex';
+
+      const url = `${WIX_FORM_URL}?doc_id=${encodeURIComponent(match[0])}`;
+      setTimeout(() => window.location.href = url, 700);
+    }
   </script>
 </body>
 </html>
