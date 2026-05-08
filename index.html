@@ -4,8 +4,8 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Активація гарантії</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -19,37 +19,39 @@
     .logo { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: #7a9ab5; margin-bottom: 32px; font-weight: 500; }
     h1 { font-size: 20px; font-weight: 600; margin-bottom: 6px; text-align: center; color: #20303C; }
     .hint { font-size: 13px; color: #5a7a93; margin-bottom: 28px; text-align: center; }
-    #camera-wrap {
-      position: relative;
-      width: min(300px, 88vw); height: min(300px, 88vw);
-      border-radius: 20px; overflow: hidden; background: #20303C;
+
+    #qr-reader {
+      width: min(300px, 88vw);
+      border-radius: 20px;
+      overflow: hidden;
       box-shadow: 0 8px 32px rgba(32,48,60,0.15);
     }
-    video { width: 100%; height: 100%; object-fit: cover; display: block; }
-    canvas { display: none; }
-    .corners { position: absolute; inset: 0; pointer-events: none; }
-    .corners::before,.corners::after,.corners b::before,.corners b::after {
-      content: ''; position: absolute; width: 26px; height: 26px;
-      border-color: rgba(225,235,247,.9); border-style: solid; border-radius: 2px;
+
+    /* Приховуємо стандартний UI html5-qrcode */
+    #qr-reader img { display: none !important; }
+    #qr-reader__dashboard_section_csr button {
+      background: #20303C !important;
+      color: #E1EBF7 !important;
+      border: none !important;
+      border-radius: 8px !important;
+      padding: 8px 16px !important;
+      font-family: 'Rubik', sans-serif !important;
+      font-size: 13px !important;
+      margin-top: 8px !important;
+      cursor: pointer !important;
     }
-    .corners::before  { top:14px;    left:14px;   border-width: 3px 0 0 3px; }
-    .corners::after   { top:14px;    right:14px;  border-width: 3px 3px 0 0; }
-    .corners b::before{ bottom:14px; left:14px;   border-width: 0 0 3px 3px; }
-    .corners b::after { bottom:14px; right:14px;  border-width: 0 3px 3px 0; }
-    .scanline {
-      position: absolute; left:14px; right:14px; height: 1.5px;
-      background: linear-gradient(90deg, transparent, #E1EBF7 40%, #fff 50%, #E1EBF7 60%, transparent);
-      animation: sweep 2.2s ease-in-out infinite;
+    #qr-reader__dashboard_section_swaplink { display: none !important; }
+    #qr-reader__status_span { 
+      font-family: 'Rubik', sans-serif !important;
+      font-size: 13px !important;
+      color: #5a7a93 !important;
     }
-    @keyframes sweep {
-      0%   { top: 14px; opacity: 0; }
-      8%   { opacity: 1; }
-      92%  { opacity: 1; }
-      100% { top: calc(100% - 14px); opacity: 0; }
-    }
+    #qr-reader__header_message { display: none !important; }
+
     #status { margin-top: 20px; font-size: 14px; color: #5a7a93; text-align: center; min-height: 20px; }
     #status.ok  { color: #2d7a4f; }
     #status.err { color: #b94040; }
+
     #success-screen {
       display: none; flex-direction: column; align-items: center; gap: 14px;
       animation: fadeIn .4s ease;
@@ -61,12 +63,6 @@
     }
     #success-screen h2 { font-size: 18px; font-weight: 600; color: #20303C; }
     #success-screen p  { font-size: 13px; color: #5a7a93; }
-    #retry-btn {
-      margin-top: 12px; background: #20303C; border: none;
-      color: #E1EBF7; padding: 10px 24px; border-radius: 10px;
-      font-size: 13px; font-family: 'Rubik', sans-serif; font-weight: 500;
-      cursor: pointer; transition: opacity .2s;
-    }
   </style>
 </head>
 <body>
@@ -76,14 +72,8 @@
   <div id="scanner-screen">
     <h1>Скануйте QR-код</h1>
     <p class="hint">Наведіть камеру на QR-код з коробки</p>
-    <div id="camera-wrap">
-      <video id="video" autoplay playsinline muted></video>
-      <canvas id="canvas"></canvas>
-      <div class="corners"><b></b></div>
-      <div class="scanline"></div>
-    </div>
-    <p id="status">Запускаємо камеру…</p>
-    <button id="retry-btn" style="display:none" onclick="startScanner()">Спробувати знову</button>
+    <div id="qr-reader"></div>
+    <p id="status"></p>
   </div>
 
   <div id="success-screen">
@@ -94,101 +84,49 @@
 
   <script>
     const WIX_FORM_URL = 'https://www.coffeeoneapp.com/qr-activation';
-
-    const video    = document.getElementById('video');
-    const canvas   = document.getElementById('canvas');
-    const ctx      = canvas.getContext('2d', { willReadFrequently: true });
     const statusEl = document.getElementById('status');
-    const retryBtn = document.getElementById('retry-btn');
 
-    let scanning  = false;
-    let stream    = null;
-    let tickTimer = null;
+    const html5QrCode = new Html5Qrcode('qr-reader');
 
-    async function startScanner() {
-      retryBtn.style.display = 'none';
-      statusEl.className = '';
-      statusEl.textContent = 'Запускаємо камеру…';
+    const config = {
+      fps: 10,
+      qrbox: { width: 250, height: 250 },
+      aspectRatio: 1.0,
+      supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA],
+    };
 
-      if (tickTimer) clearInterval(tickTimer);
-      if (stream) stream.getTracks().forEach(t => t.stop());
-
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: 'environment' },
-            width:  { ideal: 1280 },
-            height: { ideal: 1280 },
-          }
-        });
-
-        video.srcObject = stream;
-        video.setAttribute('playsinline', true);
-        await video.play();
-
-        statusEl.textContent = 'Наведіть на QR-код';
-        scanning = true;
-
-        // Використовуємо setInterval замість requestAnimationFrame —
-        // надійніше працює на iOS Safari
-        tickTimer = setInterval(tick, 200); // 5 разів на секунду
-
-      } catch (err) {
-        statusEl.textContent = 'Помилка камери: ' + err.message;
-        statusEl.className = 'err';
-        retryBtn.style.display = 'inline-block';
+    html5QrCode.start(
+      { facingMode: 'environment' },
+      config,
+      (decodedText) => {
+        // Успішно зчитано
+        handleQR(decodedText);
+      },
+      (errorMessage) => {
+        // Це нормально — викликається кожен кадр де QR не знайдено
       }
-    }
-
-    function tick() {
-      if (!scanning) return;
-      if (video.paused || video.ended) return;
-      if (!video.videoWidth || !video.videoHeight) return;
-
-      canvas.width  = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-      statusEl.textContent = canvas.width + 'x' + canvas.height + ' | сканую…';
-
-      try {
-        const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-
-        let code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
-        if (!code) code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'invertFirst' });
-
-        if (code?.data?.trim()) {
-          scanning = false;
-          clearInterval(tickTimer);
-          statusEl.textContent = 'Знайдено!';
-          handleQR(code.data.trim());
-        }
-      } catch(e) {
-        // ігноруємо помилки окремих кадрів
-      }
-    }
+    ).catch(err => {
+      statusEl.textContent = 'Помилка камери: ' + err;
+      statusEl.className = 'err';
+    });
 
     function handleQR(text) {
       const match = text.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
 
       if (!match) {
-        statusEl.textContent = 'Невідомий формат: ' + text.slice(0, 50);
+        statusEl.textContent = 'Невідомий формат QR. Спробуйте ще.';
         statusEl.className = 'err';
-        retryBtn.style.display = 'inline-block';
-        scanning = true;
-        tickTimer = setInterval(tick, 200);
         return;
       }
 
+      html5QrCode.stop();
+
       document.getElementById('scanner-screen').style.display = 'none';
       document.getElementById('success-screen').style.display = 'flex';
-      if (stream) stream.getTracks().forEach(t => t.stop());
 
       const url = `${WIX_FORM_URL}?doc_id=${encodeURIComponent(match[0])}`;
       setTimeout(() => window.location.href = url, 700);
     }
-
-    startScanner();
   </script>
 </body>
 </html>
