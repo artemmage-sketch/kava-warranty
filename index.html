@@ -97,38 +97,44 @@
 
     const video    = document.getElementById('video');
     const canvas   = document.getElementById('canvas');
-    const ctx      = canvas.getContext('2d');
+    const ctx      = canvas.getContext('2d', { willReadFrequently: true });
     const statusEl = document.getElementById('status');
     const retryBtn = document.getElementById('retry-btn');
 
-    let scanning = false;
-    let stream   = null;
-    let frameCount = 0;
+    let scanning  = false;
+    let stream    = null;
+    let tickTimer = null;
 
     async function startScanner() {
       retryBtn.style.display = 'none';
       statusEl.className = '';
       statusEl.textContent = 'Запускаємо камеру…';
-      frameCount = 0;
+
+      if (tickTimer) clearInterval(tickTimer);
+      if (stream) stream.getTracks().forEach(t => t.stop());
 
       try {
-        if (stream) stream.getTracks().forEach(t => t.stop());
-
         stream = await navigator.mediaDevices.getUserMedia({
           video: {
-            facingMode: 'environment',
+            facingMode: { ideal: 'environment' },
             width:  { ideal: 1280 },
             height: { ideal: 1280 },
           }
         });
 
         video.srcObject = stream;
+        video.setAttribute('playsinline', true);
         await video.play();
+
+        statusEl.textContent = 'Наведіть на QR-код';
         scanning = true;
-        requestAnimationFrame(tick);
+
+        // Використовуємо setInterval замість requestAnimationFrame —
+        // надійніше працює на iOS Safari
+        tickTimer = setInterval(tick, 200); // 5 разів на секунду
 
       } catch (err) {
-        statusEl.textContent = 'Немає доступу до камери: ' + err.message;
+        statusEl.textContent = 'Помилка камери: ' + err.message;
         statusEl.className = 'err';
         retryBtn.style.display = 'inline-block';
       }
@@ -136,17 +142,16 @@
 
     function tick() {
       if (!scanning) return;
+      if (video.paused || video.ended) return;
+      if (!video.videoWidth || !video.videoHeight) return;
 
-      if (video.readyState === video.HAVE_ENOUGH_DATA) {
-        frameCount++;
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        canvas.width  = video.videoWidth;
-        canvas.height = video.videoHeight;
-        ctx.drawImage(video, 0, 0);
+      statusEl.textContent = canvas.width + 'x' + canvas.height + ' | сканую…';
 
-        // Показуємо розмір кадру і лічильник для дебагу
-        statusEl.textContent = canvas.width + 'x' + canvas.height + ' | кадр: ' + frameCount;
-
+      try {
         const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
         let code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
@@ -154,13 +159,13 @@
 
         if (code?.data?.trim()) {
           scanning = false;
-          statusEl.textContent = 'Знайдено: ' + code.data;
-          setTimeout(() => handleQR(code.data.trim()), 500);
-          return;
+          clearInterval(tickTimer);
+          statusEl.textContent = 'Знайдено!';
+          handleQR(code.data.trim());
         }
+      } catch(e) {
+        // ігноруємо помилки окремих кадрів
       }
-
-      requestAnimationFrame(tick);
     }
 
     function handleQR(text) {
@@ -170,6 +175,8 @@
         statusEl.textContent = 'Невідомий формат: ' + text.slice(0, 50);
         statusEl.className = 'err';
         retryBtn.style.display = 'inline-block';
+        scanning = true;
+        tickTimer = setInterval(tick, 200);
         return;
       }
 
