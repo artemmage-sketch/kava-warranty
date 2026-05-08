@@ -72,7 +72,7 @@
 </head>
 <body>
 
-  <p class="logo">Coffee One — Активація гарантії</p>
+  <p class="logo">Kava — Активація гарантії</p>
 
   <div id="scanner-screen">
     <h1>Скануйте QR-код</h1>
@@ -114,7 +114,7 @@
       try {
         if (stream) stream.getTracks().forEach(t => t.stop());
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment', width: { ideal: 1280 } }
+          video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1920 } }
         });
         video.srcObject = stream;
         await video.play();
@@ -135,7 +135,8 @@
         canvas.height = video.videoHeight;
         ctx.drawImage(video, 0, 0);
         const img  = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+        let code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+        if (!code) code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'invertFirst' });
         if (code?.data?.trim()) {
           scanning = false;
           handleQR(code.data.trim());
