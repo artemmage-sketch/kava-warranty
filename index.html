@@ -19,42 +19,6 @@
     .logo { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: #7a9ab5; margin-bottom: 32px; font-weight: 500; }
     h1 { font-size: 20px; font-weight: 600; margin-bottom: 6px; text-align: center; color: #20303C; }
     .hint { font-size: 13px; color: #5a7a93; margin-bottom: 28px; text-align: center; }
-
-    /* Плашка з даними користувача */
-    #member-badge {
-      display: none;
-      align-items: center;
-      gap: 10px;
-      background: #fff;
-      border-radius: 12px;
-      padding: 10px 16px;
-      margin-bottom: 20px;
-      box-shadow: 0 2px 12px rgba(32,48,60,0.08);
-      font-size: 13px;
-      color: #20303C;
-      width: min(300px, 88vw);
-    }
-    #member-badge.visible { display: flex; }
-    .badge-avatar {
-      width: 32px; height: 32px; border-radius: 50%;
-      background: #20303C; color: #E1EBF7;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 14px; font-weight: 600; flex-shrink: 0;
-    }
-    .badge-info { display: flex; flex-direction: column; gap: 2px; }
-    .badge-name { font-weight: 600; font-size: 13px; }
-    .badge-email { font-size: 11px; color: #7a9ab5; }
-    .badge-verified {
-      margin-left: auto;
-      background: #e8f5e9;
-      color: #388e3c;
-      font-size: 10px;
-      font-weight: 600;
-      padding: 3px 8px;
-      border-radius: 20px;
-      letter-spacing: .04em;
-    }
-
     #qr-reader {
       width: min(300px, 88vw);
       border-radius: 20px;
@@ -73,23 +37,6 @@
     #qr-reader__header_message { display: none !important; }
     #status { margin-top: 20px; font-size: 14px; color: #5a7a93; text-align: center; min-height: 20px; }
     #status.err { color: #b94040; }
-
-    /* Попередження якщо не авторизований */
-    #auth-warning {
-      display: none;
-      background: #fff3e0;
-      border: 1px solid #ffb74d;
-      border-radius: 12px;
-      padding: 12px 16px;
-      font-size: 13px;
-      color: #e65100;
-      text-align: center;
-      width: min(300px, 88vw);
-      margin-bottom: 16px;
-      line-height: 1.5;
-    }
-    #auth-warning.visible { display: block; }
-
     #success-screen {
       display: none; flex-direction: column; align-items: center; gap: 14px;
       animation: fadeIn .4s ease;
@@ -107,22 +54,6 @@
 
   <p class="logo">Coffee One — Активація гарантії</p>
 
-  <!-- Плашка авторизованого користувача -->
-  <div id="member-badge">
-    <div class="badge-avatar" id="badge-avatar">?</div>
-    <div class="badge-info">
-      <span class="badge-name" id="badge-name">—</span>
-      <span class="badge-email" id="badge-email">—</span>
-    </div>
-    <span class="badge-verified">✓ Верифіковано</span>
-  </div>
-
-  <!-- Попередження якщо не залогінений -->
-  <div id="auth-warning">
-    ⚠️ Ви не авторизовані в застосунку.<br>
-    Будь ласка, увійдіть у свій акаунт перед активацією гарантії.
-  </div>
-
   <div id="scanner-screen">
     <h1>Скануйте QR-код</h1>
     <p class="hint">Наведіть камеру на QR-код з коробки</p>
@@ -139,48 +70,6 @@
   <script>
     const WIX_FORM_URL = 'https://www.coffeeoneapp.com/qr-activation';
 
-    // ─── 1. Зчитуємо дані члена з URL-параметрів (передає Wix) ───────────────
-    const params = new URLSearchParams(window.location.search);
-
-    let memberData = null;
-
-    // Wix передає або окремі поля, або base64-токен
-    const rawToken  = params.get('token');
-    const memberId  = params.get('memberId')  || params.get('member_id');
-    const memberEmail = params.get('email');
-    const memberName  = params.get('name');
-
-    if (rawToken) {
-      // Варіант А: base64 JSON-токен  →  { id, email, name }
-      try {
-        memberData = JSON.parse(atob(rawToken));
-      } catch(e) {
-        console.warn('Не вдалось розкодувати token:', e);
-      }
-    } else if (memberId && memberEmail) {
-      // Варіант Б: окремі параметри
-      memberData = { id: memberId, email: memberEmail, name: memberName || '' };
-    }
-
-    // ─── 2. Показуємо плашку або попередження ────────────────────────────────
-    if (memberData) {
-      const initials = (memberData.name || memberData.email || '?')
-        .split(' ')
-        .map(w => w[0])
-        .join('')
-        .toUpperCase()
-        .slice(0, 2);
-
-      document.getElementById('badge-avatar').textContent = initials;
-      document.getElementById('badge-name').textContent   = memberData.name  || 'Користувач';
-      document.getElementById('badge-email').textContent  = memberData.email || '';
-      document.getElementById('member-badge').classList.add('visible');
-    } else {
-      // Не залогінений — показуємо попередження, але сканер не блокуємо
-      document.getElementById('auth-warning').classList.add('visible');
-    }
-
-    // ─── 3. QR-сканер ────────────────────────────────────────────────────────
     const html5QrCode = new Html5Qrcode('qr-reader');
 
     html5QrCode.start(
@@ -196,13 +85,14 @@
       document.getElementById('status').className = 'err';
     });
 
-    // ─── 4. Обробка QR ───────────────────────────────────────────────────────
     function handleQR(text) {
+      // Шукаємо UUID формату xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
       const match = text.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
 
       if (!match) {
         document.getElementById('status').textContent = 'Невідомий формат QR. Спробуйте ще.';
         document.getElementById('status').className = 'err';
+        // Перезапускаємо сканер
         html5QrCode.start(
           { facingMode: 'environment' },
           { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 },
@@ -212,20 +102,12 @@
         return;
       }
 
-      // Будуємо URL з doc_id + даними члена (якщо є)
-      const url = new URL(WIX_FORM_URL);
-      url.searchParams.set('doc_id', match[0]);
-
-      if (memberData) {
-        if (memberData.id)    url.searchParams.set('member_id', memberData.id);
-        if (memberData.email) url.searchParams.set('email',     memberData.email);
-        if (memberData.name)  url.searchParams.set('name',      memberData.name);
-      }
-
+      // Показуємо успіх і переходимо
       document.getElementById('scanner-screen').style.display = 'none';
       document.getElementById('success-screen').style.display = 'flex';
 
-      setTimeout(() => window.location.href = url.toString(), 700);
+      const url = `${WIX_FORM_URL}?doc_id=${encodeURIComponent(match[0])}`;
+      setTimeout(() => window.location.href = url, 700);
     }
   </script>
 </body>
