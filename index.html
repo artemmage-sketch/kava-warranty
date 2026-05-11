@@ -70,6 +70,10 @@
   <script>
     const WIX_FORM_URL = 'https://www.coffeeoneapp.com/qr-activation';
 
+    // Зчитуємо memberId з URL який передав віджет
+    const params = new URLSearchParams(window.location.search);
+    const memberId = params.get('memberId') || '';
+
     const html5QrCode = new Html5Qrcode('qr-reader');
 
     html5QrCode.start(
@@ -86,13 +90,11 @@
     });
 
     function handleQR(text) {
-      // Шукаємо UUID формату xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
       const match = text.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
 
       if (!match) {
         document.getElementById('status').textContent = 'Невідомий формат QR. Спробуйте ще.';
         document.getElementById('status').className = 'err';
-        // Перезапускаємо сканер
         html5QrCode.start(
           { facingMode: 'environment' },
           { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 },
@@ -102,11 +104,11 @@
         return;
       }
 
-      // Показуємо успіх і переходимо
       document.getElementById('scanner-screen').style.display = 'none';
       document.getElementById('success-screen').style.display = 'flex';
 
-      const url = `${WIX_FORM_URL}?doc_id=${encodeURIComponent(match[0])}`;
+      // Передаємо і doc_id і memberId у форму Wix
+      const url = `${WIX_FORM_URL}?doc_id=${encodeURIComponent(match[0])}&memberId=${encodeURIComponent(memberId)}`;
       setTimeout(() => window.location.href = url, 700);
     }
   </script>
